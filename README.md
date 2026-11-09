@@ -25,15 +25,57 @@ Diseño de hardware y PCB para una **Fuente de Alimentación Lineal Regulable v1
 | **C1, C2** | 2 | $2200\,\mu\text{F} / 50\,\text{V}$ | Condensadores electrolíticos radiales |
 | **C3** | 1 | $33\,\mu\text{F} / 25\,\text{V}$ | Condensador electrolítico radial |
 | **C4** | 1 | $1\,\mu\text{F} / 25\,\text{V}$ | Condensador de tántalo |
-| **R1, R2** | 2 | Resistencia (R) | Resistencias fijas Through-Hole |
-| **RV1** | 1 | Potenciómetro $5\,\text{k}\Omega$ | Control de voltaje de salida |
+| **R1** | 1 | Resistencia (R) | Resistencia fija Through-Hole (LED indicador) |
+| **R2** | 1 | $240\,\Omega$ / ¼ W | Resistencia de programación del LM317 (fija en v2.0) |
+| **~~RV1~~** | — | ~~Potenciómetro $5\,\text{k}\Omega$~~ | **Retirado en v2.0** (sustituido por control digital) |
 | **J1, J4** | 2 | Bornera 2 pines | Entradas/Salidas principales |
 | **J2, J3** | 2 | Pin Header 1x02 | Salidas auxiliares $V_{CC}$ y $V_{DD}$ |
+| **U2** | 1 | Opamp MCP6002 (o LM358) | Buffer/amplificador no inversor $G=2.15$ **(v2.0)** |
+| **R3** | 1 | $10\,\text{k}\Omega$ / ¼ W | Resistencia del filtro RC **(v2.0)** |
+| **C5** | 1 | $10\,\mu\text{F}$ / 16 V | Condensador del filtro RC **(v2.0)** |
+| **R4** | 1 | $10\,\text{k}\Omega$ / ¼ W ($R_g$) | Resistencia de la red de ganancia **(v2.0)** |
+| **R5** | 1 | $11.5\,\text{k}\Omega$ / ¼ W ($R_f'$) | Resistencia de realimentación de ganancia **(v2.0)** |
+| **C6** | 1 | $100\,\text{nF}$ | Desacople de alimentación del opamp **(v2.0)** |
+| **J5** | 1 | Pin Header 1x03 | Header de control Arduino: `PWM_IN`, `GND`, `VCC_OPAMP` (desde la placa, **no** del Arduino) **(v2.0)** |
+| **HS1** | 1 | Disipador TO-220 $R_{th(SA)}\le 5\,^\circ\text{C/W}$ + pasta térmica | **Disipador por defecto** del LM317 (seguro a $0.5\,\text{A}$) **(v2.0)** |
+
+> 📝 **Nota v2.0:** el potenciómetro $RV_1$ **se retira** y $R_2$ **pasa a valor fijo $240\,\Omega$**. Los componentes marcados **(v2.0)** son la etapa de control digital añadida. Ver [Control Digital v2.0](#-control-digital-v20).
+
+---
+
+## 🤖 Control Digital v2.0
+En la **v2.0** se elimina el ajuste manual con potenciómetro ($RV_1$) y el voltaje de salida pasa a controlarse con un **Arduino estándar** (Uno/Nano), **sin perder la naturaleza de electrónica de potencia**: el elemento que entrega la potencia a la carga sigue siendo el regulador **lineal LM317** con rectificación por diodos a la entrada. El Arduino solo aporta una **consigna analógica de bajo nivel**.
+
+El lazo de control es **PWM → RC → opamp → nodo ADJ**:
+
+$$\text{PWM (0–5 V)} \;\rightarrow\; \text{Filtro RC} \;\rightarrow\; \text{Opamp no inversor } (G=2.15) \;\rightarrow\; \text{nodo ADJ del LM317}$$
+
+1. **PWM:** un pin del Arduino genera una onda de $0\text{–}5\,\text{V}$ con ciclo de trabajo $D$ programable.
+2. **Filtro RC** ($R_3=10\,\text{k}\Omega$, $C_5=10\,\mu\text{F}$, $f_c\approx 1.59\,\text{Hz}$): convierte el PWM en una tensión DC limpia $V_{rc}\in[0,5]\,\text{V}$.
+3. **Opamp no inversor** ($R_g=10\,\text{k}\Omega$, $R_f'=11.5\,\text{k}\Omega$): amplifica a $0\text{–}10.75\,\text{V}$ y **aísla** el Arduino (lógica $5\,\text{V}$) del nodo ADJ, que puede superar los $10\,\text{V}$.
+4. **Nodo ADJ:** como el LM317 mantiene $1.25\,\text{V}$ entre $V_O$ y ADJ, controlar el nodo ADJ controla la salida: $V_{out}=V_{ADJ}+1.25\,\text{V}$.
+
+Relación consigna → salida (rango $1.25\,\text{V}$ a $\approx 12\,\text{V}$):
+
+$$V_{out} = 10.75\cdot D + 1.25\,\text{V}\qquad D\in[0,1]$$
+
+El PWM es de **8 bits** (256 niveles), por lo que la salida se cuantiza en pasos de $\approx 42\,\text{mV}$ ($10.75\,\text{V}/255$): es el límite de precisión frente al ajuste continuo del potenciómetro de la v1.0.
+
+> 🚫 **Alimentación del opamp:** el opamp ($U_2$) se alimenta **desde la placa** ($V_{CC}\approx 18\,\text{V}$) o un riel auxiliar externo de $12\text{–}15\,\text{V}$, **NUNCA desde el Arduino**. El pin `VCC_OPAMP` de $J_5$ trae esa alimentación de placa/riel auxiliar, no del Arduino (que solo da $5\,\text{V}$, insuficientes para los $\approx 10.75\,\text{V}$ de salida del opamp).
+>
+> ⚠️ **Masa común:** el $GNDREF$ de la placa y la masa del Arduino deben unirse (vía $J_5$, pin 2). El Arduino se alimenta **aparte** y **solo** comparte GND y la señal PWM con la placa.
+>
+> 🌡️ **Térmica (configuración segura por defecto):** el LM317 es lineal y el peor caso térmico es a $V_{out}$ mínima ($\approx 8.4\,\text{W}$ a $0.5\,\text{A}$). La v2.0 **fija un disipador $HS_1$ con $R_{th(SA)}\le 5\,^\circ\text{C/W}$** ($T_j\approx 100\,^\circ\text{C}$, dentro de margen). Alternativa segura: disipador pequeño con **corriente limitada a $I_{load}\le 0.3\,\text{A}$**. Ver cálculo en el [documento de diseño §7.1](docs/DISENO_V2_CONTROL_DIGITAL.md).
+
+**Documentación de la v2.0:**
+- 📐 Diseño y cálculos (filtro RC, ganancia, $R_2$, térmica): [`docs/DISENO_V2_CONTROL_DIGITAL.md`](docs/DISENO_V2_CONTROL_DIGITAL.md)
+- 🛠️ Guía de modificación en KiCad (esquemático + PCB): [`docs/GUIA_MODIFICACION_KICAD.md`](docs/GUIA_MODIFICACION_KICAD.md)
+- 💻 Firmware del Arduino: [`firmware/control_lm317.ino`](firmware/control_lm317.ino)
 
 ---
 
 ## 🚀 Roadmap (Versión 2.0 - Digitalización)
-- [ ] Reemplazar potenciómetro analógico ($RV_1$) por potenciómetro digital o DAC.
+- [x] Reemplazar potenciómetro analógico ($RV_1$) por control digital (PWM → RC → opamp → nodo ADJ). **Implementado en v2.0.**
 - [ ] Control por microcontrolador (ESP32 / STM32 / ATmega328P).
 - [ ] Lectura de voltaje y corriente en tiempo real con sensor INA219.
 - [ ] Integración de pantalla OLED / LCD I2C.
