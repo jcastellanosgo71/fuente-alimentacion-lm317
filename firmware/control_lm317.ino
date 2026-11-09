@@ -68,6 +68,22 @@
  *               Vout = 12.0 V  (D ~ 1,   duty = 255)
  *
  *  ---------------------------------------------------------------------------
+ *  RESOLUCION: LIMITE DE PRECISION (PWM de 8 bits)
+ *  ---------------------------------------------------------------------------
+ *  analogWrite() usa PWM de 8 bits: solo 256 niveles de duty (0..255). Como la
+ *  excursion de salida es de 10.75 V repartida en 255 pasos, el escalon minimo
+ *  (1 LSB) en la salida vale:
+ *
+ *        dVout = 10.75 V / 255 ~ 42 mV por paso
+ *
+ *  Es decir, la salida NO es continua: solo puede fijarse en multiplos de
+ *  ~42 mV. Frente al potenciometro de la v1.0 (ajuste continuo), este es el
+ *  precio de la automatizacion. Por eso dutyAVoltaje() informa del voltaje
+ *  REALMENTE aplicado tras la cuantizacion, que puede diferir unos mV del
+ *  pedido. Para mayor resolucion: subir el PWM a 10 bits (~10.5 mV/LSB) o usar
+ *  un DAC externo (MCP4725, 12 bits ~2.6 mV/LSB). Ver documento de diseno §4.1.
+ *
+ *  ---------------------------------------------------------------------------
  *  MEJORA OPCIONAL (no implementada aqui a proposito)
  *  ---------------------------------------------------------------------------
  *  El PWM por defecto del Arduino Uno/Nano trabaja a ~490 Hz en la mayoria de
@@ -180,9 +196,14 @@ void setup() {
   Serial.print(FREC_PWM_HZ, 0);
   Serial.println(F(" Hz   Resolucion: 8 bits (0-255)"));
   Serial.println(F("Mapeo: Vout = 10.75 * (duty/255) + 1.25"));
+  Serial.println(F("Resolucion: ~42 mV por paso (10.75 V / 255, PWM 8 bits)"));
   Serial.println(F("--------------------------------------------"));
   Serial.println(F("Escribe el voltaje deseado (p. ej. 5.0) y pulsa ENTER."));
-  Serial.println(F("Valores fuera de rango se saturan a los limites."));
+  Serial.print(F("Minimo fisico: "));
+  Serial.print(VOUT_MIN, 2);
+  Serial.println(F(" V. Valores por debajo se saturan a ese minimo."));
+  Serial.println(F("Valores por encima del maximo se saturan al maximo."));
+  Serial.println(F("Entrada vacia / no numerica / <= 0 se descarta (ver [ERROR])."));
   Serial.println(F("--------------------------------------------"));
 }
 
@@ -203,11 +224,19 @@ void loop() {
       Serial.read();
     }
 
-    // Validacion basica: parseFloat() devuelve 0.0 si no habia numero valido.
-    // Como 0.0 esta por debajo de VOUT_MIN, lo tratamos como consigna invalida
-    // para no confundir una entrada vacia con una peticion real.
+    // Validacion de entrada. Importante sobre parseFloat():
+    //   - Devuelve 0.0 si la entrada esta VACIA o NO es un numero (p. ej. letras),
+    //     o si realmente se escribio "0". No distingue esos tres casos entre si.
+    //   - El minimo FISICO de la fuente es VOUT_MIN = 1.25 V (el LM317 no baja de
+    //     ahi: Vout = V_ADJ + 1.25 con V_ADJ >= 0). Por tanto, cualquier valor
+    //     <= 0 (incluida la entrada vacia/no numerica y un "0" intencionado) no es
+    //     una consigna alcanzable: se trata como entrada no valida y se descarta.
+    //   - Si lo que quieres es "lo minimo posible", escribe 1.25 (o menos: se
+    //     saturara a 1.25 V por el clamp de voltajeADuty()).
     if (voltajePedido <= 0.0) {
-      Serial.println(F("[ERROR] Entrada no valida. Escribe un voltaje > 0 (p. ej. 5.0)."));
+      Serial.print(F("[ERROR] Entrada vacia, no numerica o <= 0. El minimo fisico es "));
+      Serial.print(VOUT_MIN, 2);
+      Serial.println(F(" V. Escribe un voltaje en ese rango (p. ej. 5.0)."));
       return;
     }
 

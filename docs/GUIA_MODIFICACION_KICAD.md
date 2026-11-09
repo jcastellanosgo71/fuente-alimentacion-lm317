@@ -84,11 +84,19 @@ Añadimos un conector para traer la señal de PWM del Arduino y compartir la mas
 4. Define el criterio de pines (lo cablearemos en A.5):
    - **Pin 1 → `PWM_IN`** (entrada de la señal del Arduino, 0–5 V).
    - **Pin 2 → `GND`** (se conectará a `GNDREF`: masa común con el Arduino).
-   - **Pin 3 → `VCC_OPAMP`** (opcional, por si alimentas el opamp desde fuera en vez de desde `VCC`).
+   - **Pin 3 → `VCC_OPAMP`** (alimentación del opamp **desde la placa o un riel auxiliar externo**, p. ej. si no quieres cablear el opamp directamente a `VCC` dentro de la placa). **Nunca** se conecta al Arduino.
+
+> 🚫 **`VCC_OPAMP` NO viene del Arduino.** El pin 3 de `J5` lleva la alimentación del opamp, que
+> procede de la **PLACA** (`VCC` ≈ 18 V) o de un **riel auxiliar externo** de 12–15 V. El Arduino se
+> alimenta **aparte** y **solo** se conecta a `J5` por el pin 1 (`PWM_IN`) y el pin 2 (`GND`).
+> Conectar el opamp a los 5 V del Arduino no funcionaría (el opamp debe dar hasta ≈ 10.75 V)
+> y contradiría la premisa de "Arduino alimentado aparte"
+> (ver [`DISENO_V2_CONTROL_DIGITAL.md`](DISENO_V2_CONTROL_DIGITAL.md) §5).
 
 > 🔗 **Masa común obligatoria:** la masa del Arduino debe unirse a `GNDREF` a través del pin 2 de `J5`.
 > Sin esa referencia común, el PWM no comparte el 0 V con el nodo ADJ y el control no funciona
-> (ver [`DISENO_V2_CONTROL_DIGITAL.md`](DISENO_V2_CONTROL_DIGITAL.md) §5).
+> (ver [`DISENO_V2_CONTROL_DIGITAL.md`](DISENO_V2_CONTROL_DIGITAL.md) §5). Compartir GND **no** significa
+> alimentar el opamp desde el Arduino: solo comparten la referencia de 0 V.
 
 ### A.4 — Colocar el opamp y la red RC + ganancia
 
@@ -129,9 +137,10 @@ KiCad coloca el cable; tú solo defines qué pin va con qué nodo.
 4. **Salida del opamp → nodo ADJ del LM317** (¡aquí estaba el *wiper* de `RV1`!):
    - Conecta la **salida** del `U2` al **pin 1 (`ADJ`) del `U1`**.
    - Este es el cambio central: el opamp **inyecta la tensión** del nodo ADJ en lugar del potenciómetro.
-5. **Alimentación del opamp:**
-   - Conecta el **pin de alimentación positiva (`V+`)** del `U2` a **`VCC`** (≈ 18 V, el riel ya rectificado),
-     o al pin 3 de `J5` (`VCC_OPAMP`) si prefieres un riel auxiliar de 12–15 V.
+5. **Alimentación del opamp (desde la placa, NUNCA del Arduino):**
+   - Conecta el **pin de alimentación positiva (`V+`)** del `U2` a **`VCC`** (≈ 18 V, el riel ya rectificado
+     de la propia placa), o al pin 3 de `J5` (`VCC_OPAMP`) si prefieres traer un riel auxiliar **externo**
+     de 12–15 V. En ningún caso este pin se conecta a los 5 V del Arduino.
    - Conecta el **pin de alimentación negativa (`V−`/`GND`)** del `U2` a **`GNDREF`** (alimentación simple).
    - Coloca **`C6` (100 nF)** entre `V+` del `U2` y `GNDREF`, lo más cerca posible del opamp.
 6. **Masa del header:**
@@ -226,12 +235,12 @@ Guarda y actualiza los campos de footprint en el esquemático.
 | :--- | :--- | :--- |
 | ❌ **Se quita** | `RV1` (potenciómetro 5 kΩ) | Estaba entre el nodo **ADJ** (pin 1 de `U1`) y `GNDREF`. Se elimina junto con sus cables sueltos. |
 | 🔧 **Se modifica** | `R2` | *Value* pasa de `R` genérico a **240 Ω / ¼ W** (fijo). Mantiene conexión ADJ ↔ `VDD`. |
-| ➕ **Se añade** | `U2` (opamp MCP6002/LM358) | Amplificador no inversor, $G=2.15$. **Salida → nodo ADJ** (reemplaza al *wiper* de `RV1`). Alimentado desde `VCC`, masa a `GNDREF`. |
+| ➕ **Se añade** | `U2` (opamp MCP6002/LM358) | Amplificador no inversor, $G=2.15$. **Salida → nodo ADJ** (reemplaza al *wiper* de `RV1`). Alimentado desde `VCC` de la placa (o riel auxiliar externo), **nunca del Arduino**; masa a `GNDREF`. |
 | ➕ **Se añade** | `R3` = 10 kΩ + `C5` = 10 µF | **Filtro RC**: entrada desde `J5.PWM_IN`; salida ($V_{rc}$) → entrada **`+`** del `U2`. `C5` a `GNDREF`. |
 | ➕ **Se añade** | `R4` = 10 kΩ ($R_g$) | De la entrada **`−`** del `U2` a `GNDREF`. |
 | ➕ **Se añade** | `R5` = 11.5 kΩ ($R_f'$) | Realimentación: salida del `U2` → entrada **`−`** del `U2`. |
 | ➕ **Se añade** | `C6` = 100 nF | Desacople entre `V+` del `U2` y `GNDREF`, junto al opamp. |
-| ➕ **Se añade** | `J5` (header 1x03) | `PWM_IN` (pin 1), `GND` → `GNDREF` (pin 2), `VCC_OPAMP` opcional (pin 3). Masa común con el Arduino. |
+| ➕ **Se añade** | `J5` (header 1x03) | `PWM_IN` (pin 1), `GND` → `GNDREF` (pin 2), `VCC_OPAMP` (pin 3, **desde la placa / riel auxiliar externo, no del Arduino**). Con el Arduino solo se comparten PWM y GND. |
 | 🔗 **Se reconecta** | Nodo **ADJ** (pin 1 de `U1`) | Antes: *wiper* de `RV1`. Ahora: **salida del `U2`** (+ `C3` 33 µF y `R2`, que ya existían). |
 
 ---
@@ -242,7 +251,7 @@ Guarda y actualiza los campos de footprint en el esquemático.
 - [ ] `R2` con *Value* = 240 Ω.
 - [ ] `J5`, `U2`, `R3`, `R4`, `R5`, `C5`, `C6` colocados y cableados según la Parte A.
 - [ ] Salida del `U2` conectada al pin **ADJ** del `U1`.
-- [ ] Opamp alimentado desde `VCC` y masa a `GNDREF`; masa del Arduino unida vía `J5`.
+- [ ] Opamp alimentado desde `VCC` de la placa (o riel auxiliar externo), **nunca del Arduino**; masa a `GNDREF`; masa del Arduino unida vía `J5`.
 - [ ] **ERC** sin errores en Eeschema.
 - [ ] Footprints asignados a los componentes nuevos.
 - [ ] **Update PCB from Schematic (F8)** aplicado; huella de `RV1` eliminada.

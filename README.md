@@ -36,7 +36,8 @@ Diseño de hardware y PCB para una **Fuente de Alimentación Lineal Regulable v1
 | **R4** | 1 | $10\,\text{k}\Omega$ / ¼ W ($R_g$) | Resistencia de la red de ganancia **(v2.0)** |
 | **R5** | 1 | $11.5\,\text{k}\Omega$ / ¼ W ($R_f'$) | Resistencia de realimentación de ganancia **(v2.0)** |
 | **C6** | 1 | $100\,\text{nF}$ | Desacople de alimentación del opamp **(v2.0)** |
-| **J5** | 1 | Pin Header 1x03 | Header de control Arduino: `PWM_IN`, `GND`, `VCC_OPAMP` **(v2.0)** |
+| **J5** | 1 | Pin Header 1x03 | Header de control Arduino: `PWM_IN`, `GND`, `VCC_OPAMP` (desde la placa, **no** del Arduino) **(v2.0)** |
+| **HS1** | 1 | Disipador TO-220 $R_{th(SA)}\le 5\,^\circ\text{C/W}$ + pasta térmica | **Disipador por defecto** del LM317 (seguro a $0.5\,\text{A}$) **(v2.0)** |
 
 > 📝 **Nota v2.0:** el potenciómetro $RV_1$ **se retira** y $R_2$ **pasa a valor fijo $240\,\Omega$**. Los componentes marcados **(v2.0)** son la etapa de control digital añadida. Ver [Control Digital v2.0](#-control-digital-v20).
 
@@ -58,9 +59,13 @@ Relación consigna → salida (rango $1.25\,\text{V}$ a $\approx 12\,\text{V}$):
 
 $$V_{out} = 10.75\cdot D + 1.25\,\text{V}\qquad D\in[0,1]$$
 
-> ⚠️ **Masa común:** el $GNDREF$ de la placa y la masa del Arduino deben unirse (vía $J_5$). El Arduino se alimenta **aparte**.
+El PWM es de **8 bits** (256 niveles), por lo que la salida se cuantiza en pasos de $\approx 42\,\text{mV}$ ($10.75\,\text{V}/255$): es el límite de precisión frente al ajuste continuo del potenciómetro de la v1.0.
+
+> 🚫 **Alimentación del opamp:** el opamp ($U_2$) se alimenta **desde la placa** ($V_{CC}\approx 18\,\text{V}$) o un riel auxiliar externo de $12\text{–}15\,\text{V}$, **NUNCA desde el Arduino**. El pin `VCC_OPAMP` de $J_5$ trae esa alimentación de placa/riel auxiliar, no del Arduino (que solo da $5\,\text{V}$, insuficientes para los $\approx 10.75\,\text{V}$ de salida del opamp).
 >
-> 🌡️ El LM317 es lineal: **requiere disipador** (el peor caso térmico es a $V_{out}$ mínima). Ver cálculo en el documento de diseño.
+> ⚠️ **Masa común:** el $GNDREF$ de la placa y la masa del Arduino deben unirse (vía $J_5$, pin 2). El Arduino se alimenta **aparte** y **solo** comparte GND y la señal PWM con la placa.
+>
+> 🌡️ **Térmica (configuración segura por defecto):** el LM317 es lineal y el peor caso térmico es a $V_{out}$ mínima ($\approx 8.4\,\text{W}$ a $0.5\,\text{A}$). La v2.0 **fija un disipador $HS_1$ con $R_{th(SA)}\le 5\,^\circ\text{C/W}$** ($T_j\approx 100\,^\circ\text{C}$, dentro de margen). Alternativa segura: disipador pequeño con **corriente limitada a $I_{load}\le 0.3\,\text{A}$**. Ver cálculo en el [documento de diseño §7.1](docs/DISENO_V2_CONTROL_DIGITAL.md).
 
 **Documentación de la v2.0:**
 - 📐 Diseño y cálculos (filtro RC, ganancia, $R_2$, térmica): [`docs/DISENO_V2_CONTROL_DIGITAL.md`](docs/DISENO_V2_CONTROL_DIGITAL.md)

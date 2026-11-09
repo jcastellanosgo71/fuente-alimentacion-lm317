@@ -134,6 +134,16 @@ donde $D\in[0,1]$ es el ciclo de trabajo del PWM.
 
 > 💡 Si solo se dispone de resistencias E24, usar $R_f'=11\,\text{k}\Omega$ ($G=2.1$) da un máximo de $V_{out}\approx 11.75\,\text{V}$, diferencia despreciable para la práctica.
 
+### 4.1 🎚️ Resolución: límite de precisión del PWM de 8 bits
+
+El `analogWrite()` estándar del Arduino Uno/Nano usa **PWM de 8 bits**, es decir, solo **256 niveles de duty** ($0$ a $255$). Como la excursión de salida es de $10.75\,\text{V}$ sobre esos $255$ pasos, el **escalón mínimo (1 LSB)** en la salida es:
+
+$$\Delta V_{out} = \dfrac{10.75\,\text{V}}{255} \approx 42\,\text{mV/LSB}$$
+
+Esto significa que la salida **no es continua**: solo puede fijarse en múltiplos de $\approx 42\,\text{mV}$. Frente al **potenciómetro de la v1.0**, que era un ajuste continuo (resolución "infinita" limitada solo por la mano del usuario), el control digital introduce esta **cuantización** como precio de la automatización. Nótese que el escalón de cuantización ($\approx 42\,\text{mV}$) es del mismo orden que el rizado residual ($\approx 55\,\text{mV}_{pp}$, §3): ambos son los dos límites de precisión del diseño y conviene presentarlos juntos. El firmware (`dutyAVoltaje()`) **informa del voltaje realmente aplicado** tras esta cuantización, para que el estudiante vea la diferencia con lo pedido.
+
+> 💡 **Mejora opcional (mayor resolución):** si se necesita un ajuste más fino, puede subirse la resolución del PWM reconfigurando el Timer a modo de más bits (p. ej. 10 bits → $\approx 10.5\,\text{mV/LSB}$), usar un DAC real (MCP4725, 12 bits → $\approx 2.6\,\text{mV/LSB}$) o un micro con DAC integrado. Para esta v2.0 los 8 bits son suficientes para una fuente de laboratorio didáctica.
+
 ---
 
 ## 5. ⚙️ Elección y alimentación del opamp
@@ -146,7 +156,9 @@ donde $D\in[0,1]$ es el ciclo de trabajo del PWM.
 
 **Alimentación recomendada:** alimentar el opamp desde el riel **$V_{CC}\approx 18\,\text{V}$** (la tensión ya rectificada y filtrada de entrada al LM317), o desde un riel auxiliar de $12\text{–}15\,\text{V}$. Con $18\,\text{V}$ de alimentación, un opamp alcanza holgadamente los $10.75\,\text{V}$ de salida necesarios.
 
-> 📌 **Masa común obligatoria:** el $GNDREF$ de la placa, la masa del filtro RC y la masa del Arduino **deben estar unidas**. Si no, la referencia de $0\,\text{V}$ del PWM no coincide con la del nodo ADJ y el control no funciona.
+> 🚫 **El opamp NUNCA se alimenta desde el Arduino.** El riel de $5\,\text{V}$ del Arduino **no serviría** (el opamp debe entregar hasta $\approx 10.75\,\text{V}$ en su salida, imposible con $5\,\text{V}$ de alimentación) y, además, mezclaría la electrónica de potencia con la placa de control. La alimentación positiva del opamp (`VCC_OPAMP`, pin 3 del header `J5`) proviene **siempre de la PLACA** ($V_{CC}\approx 18\,\text{V}$) **o de un riel auxiliar externo** de $12\text{–}15\,\text{V}$, **nunca del Arduino**. El Arduino se alimenta **aparte** (por su USB o su jack) y **solo comparte GND** con la placa (pin 2 de `J5`). Así se respeta la premisa de "Arduino alimentado aparte": la única conexión eléctrica Arduino↔placa son la señal PWM (pin 1 de `J5`) y la masa común (pin 2).
+
+> 📌 **Masa común obligatoria:** el $GNDREF$ de la placa, la masa del filtro RC y la masa del Arduino **deben estar unidas**. Si no, la referencia de $0\,\text{V}$ del PWM no coincide con la del nodo ADJ y el control no funciona. Esta masa común **no** implica alimentar el opamp desde el Arduino: solo comparten el $0\,\text{V}$ de referencia.
 
 **Opamp sugerido:**
 
@@ -214,6 +226,22 @@ Todavía **excede** los $125\,^\circ\text{C}$ en el peor caso a $0.5\,\text{A}$.
 3. Reducir $V_{CC}$ (p. ej. un transformador de menor tensión) también baja drásticamente la disipación en el peor caso. Es la mejora térmica más eficaz si no se necesitan $12\,\text{V}$ de salida con cabecera holgada.
 4. Si se quisiera operar a $I_{load}=1\,\text{A}$, el peor caso sube a $\approx 16.75\,\text{W}$, inviable con disipación pasiva razonable: habría que bajar $V_{CC}$ o limitar la corriente.
 
+### 7.1 🔒 Decisión de diseño por defecto (configuración segura)
+
+Para que el montaje sea seguro **sin depender de una advertencia**, la v2.0 **fija una configuración por defecto** que cierra el caso térmico: se dimensiona el disipador para que el **peor caso** ($V_{out}=1.25\,\text{V}$, $I_{load}=0.5\,\text{A}$, $P_{disip}\approx 8.4\,\text{W}$) quede dentro de especificación.
+
+**Requisito:** resistencia térmica **total** $R_{th(JA)}\le 9\,^\circ\text{C/W}$. Con $R_{th(JC)}=3\,^\circ\text{C/W}$ e interfaz $R_{th(CS)}=1\,^\circ\text{C/W}$, el disipador debe aportar:
+
+$$R_{th(SA)} \le 9 - 3 - 1 = 5\,^\circ\text{C/W}$$
+
+Con ese disipador, la temperatura de unión en el peor caso queda:
+
+$$T_j = 25 + 8.4\cdot 9 \approx 100\,^\circ\text{C}\quad(< 125\,^\circ\text{C}\ \checkmark)$$
+
+**Componente fijado en el BOM (ver §8):** disipador TO-220 con **$R_{th(SA)}\le 5\,^\circ\text{C/W}$** (p. ej. Aavid/Fischer tipo clip o atornillable de aletas, $\sim 25\text{–}35\,\text{mm}$ de alto), **más pasta térmica o almohadilla** ($R_{th(CS)}\approx 1\,^\circ\text{C/W}$). Este es el disipador **por defecto** del diseño, no una opción.
+
+> ⚠️ **Límite de corriente por defecto.** Si solo se dispone de un disipador modesto ($R_{th(SA)}\approx 11\,^\circ\text{C/W}$, $R_{th}\approx 15\,^\circ\text{C/W}$), **limita la corriente de carga a $I_{load}\le 0.3\,\text{A}$** en el peor caso: $T_j = 25 + (16.75\cdot 0.3)\cdot 15 \approx 100\,^\circ\text{C}$. Es decir: **o** disipador de $R_{th(SA)}\le 5\,^\circ\text{C/W}$ a $0.5\,\text{A}$, **o** disipador pequeño con $I_{load}\le 0.3\,\text{A}$. Ambas configuraciones son seguras; elige una explícitamente.
+
 ---
 
 ## 8. 📦 BOM delta (componentes nuevos)
@@ -228,14 +256,16 @@ Componentes **añadidos** para la etapa de control digital (además de retirar $
 | **R4** | 1 | $10\,\text{k}\Omega$ ¼ W ($R_g$) | Resistencia a masa de la red de ganancia |
 | **R5** | 1 | $11.5\,\text{k}\Omega$ ¼ W ($R_f'$) | Resistencia de realimentación de ganancia |
 | **C6** | 1 | $100\,\text{nF}$ | Desacople de alimentación del opamp |
-| **J5** | 1 | Pin Header 1x03 | Conector de control: `PWM_IN`, `GND`, (`VCC_OPAMP` opcional) |
+| **J5** | 1 | Pin Header 1x03 | Conector de control: `PWM_IN`, `GND`, `VCC_OPAMP` (desde la placa, **no** del Arduino) |
+| **HS1** | 1 | Disipador TO-220, $R_{th(SA)}\le 5\,^\circ\text{C/W}$ + pasta/almohadilla térmica | **Disipador por defecto** del LM317 (cierra el peor caso térmico a $0.5\,\text{A}$; ver §7.1) |
 
 **Cambios sobre la v1.0:**
 
 - ❌ **Se retira $RV_1$** (potenciómetro $5\,\text{k}\Omega$). Su función la asume el opamp inyectando tensión en el nodo ADJ.
 - 🔧 **$R_2$ pasa a valor fijo $240\,\Omega$ / ¼ W** (en v1.0 estaba como "R" genérico).
-- 🔌 El opamp ($U_2$) se alimenta desde **$V_{CC}\approx 18\,\text{V}$** (o riel auxiliar $12\text{–}15\,\text{V}$).
-- 🪨 El Arduino se alimenta **aparte**; solo comparte **GND** con la placa a través de `J5`.
+- 🔌 El opamp ($U_2$) se alimenta desde **$V_{CC}\approx 18\,\text{V}$ de la placa** (o riel auxiliar externo $12\text{–}15\,\text{V}$), **nunca desde el Arduino**. El pin `VCC_OPAMP` de `J5` trae esa alimentación de placa/riel auxiliar, no del Arduino.
+- 🌡️ **Disipador por defecto $HS_1$** con $R_{th(SA)}\le 5\,^\circ\text{C/W}$ (configuración segura a $0.5\,\text{A}$; alternativa: disipador pequeño con $I_{load}\le 0.3\,\text{A}$, ver §7.1).
+- 🪨 El Arduino se alimenta **aparte**; solo comparte **GND** (y recibe/envía la señal PWM) con la placa a través de `J5`.
 
 ---
 
@@ -251,7 +281,10 @@ Componentes **añadidos** para la etapa de control digital (además de retirar $
 | Ganancia opamp | $G=2.15$ ($R_g=10\,\text{k}\Omega$, $R_f'=11.5\,\text{k}\Omega$) |
 | Nodo ADJ | $0\,\text{V}$ a $10.75\,\text{V}$ |
 | Relación consigna | $V_{out} = 10.75\cdot D + 1.25\,\text{V}$ |
-| Disipación LM317 (peor caso, $0.5\,\text{A}$) | $\approx 8.4\,\text{W}$ → **requiere disipador** |
+| Resolución (PWM 8 bits) | $\approx 42\,\text{mV/LSB}$ en la salida ($10.75\,\text{V}/255$) |
+| Disipación LM317 (peor caso, $0.5\,\text{A}$) | $\approx 8.4\,\text{W}$ |
+| Disipador por defecto ($HS_1$) | $R_{th(SA)}\le 5\,^\circ\text{C/W}$ ⇒ $T_j\approx 100\,^\circ\text{C}$ a $0.5\,\text{A}$ (seguro) |
+| Alternativa segura | disipador pequeño ($R_{th(SA)}\approx 11\,^\circ\text{C/W}$) con $I_{load}\le 0.3\,\text{A}$ |
 
 ---
 
